@@ -1,0 +1,16 @@
+[Desktop Entry]
+Categories=Graphics;
+Comment=Intuitive image and photo editing software
+Exec=auto-winboat "C:\Program Files\Paint.NET\paintdotnet.exe" 4 %U
+Icon=/home/roger/customization/pdn.png
+Name=Paint.NET
+NoDisplay=false
+Path=
+PrefersNonDefaultGPU=false
+StartupNotify=true
+Terminal=false
+TerminalOptions=
+Type=Application
+X-KDE-SubstituteUID=false
+X-KDE-Username=
+MimeType=application/paintdotnet;image/bpm;image/png;image/jpeg;image/gif;image/tiff;image/webp;image/avif;
