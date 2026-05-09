@@ -3,27 +3,39 @@
 import sys
 from pathlib import Path
 import subprocess
+import json
 import urllib.request
 import re
 from time import sleep
 import paramiko
 
-RDP_COMMAND = "xfreerdp"
-MULTI_MONITOR_MODE_ARG = "+span" # "+span" or "/multimon" or None
-WINDOWS_USERNAME = "roger"
-WINDOWS_PASSWORD = "admin"
-SEND_NOTIFICATIONS = True # requires notify-send to be installed
-AUTO_SHUTDOWN_CONTAINER = True
-
+# don't modify these
 CONTAINER_NAME = "WinBoat"
 IP = "127.0.0.1"
 HOME_PATH = Path.home()
 WINDOWS_HOME_PATH = "\\\\host.lan\\Data"
+FREE_RDP_INSTALLATIONS = [
+    ["xfreerdp3"],
+    ["xfreerdp"],
+    ["flatpak", "run", "--command=xfreerdp", "com.freerdp.FreeRDP"]
+]
+FREE_RDP_VERSION_STRING = "version 3."
+
+# maybe modify these
+WINBOAT_INSTALLATION_FOLDER = HOME_PATH / ".winboat" # probably ".winboat" or "winboat"
+SEND_NOTIFICATIONS = True # requires notify-send to be installed
+AUTO_SHUTDOWN_CONTAINER = True
 
 def send_notification(message):
     print(message)
     if SEND_NOTIFICATIONS:
         subprocess.run(["notify-send", "Auto WinBoat", message])
+
+def get_clean_name(executable_path):
+    return re.sub(r"[,.'\"]", "", executable_path)
+
+def get_executable_file_name(executable_path):
+    return executable_path[executable_path.rfind("\\") + 1:]
 
 def get_port_mapping_from_port_output(port_output):
     return {
@@ -44,7 +56,8 @@ def convert_args(file_arg_positions, args):
     if file_arg_positions != 0: # convert linux file paths to Windows file paths
         file_arg_positions = list(map(lambda arg: int(arg) - 4, file_arg_positions.split(",")))
         for arg_position in file_arg_positions:
-            args[arg_position] = convert_linux_path_to_windows_path(args[arg_position])
+            if len(args) > arg_position:
+                args[arg_position] = convert_linux_path_to_windows_path(args[arg_position])
 
     return " ".join(args)
 
@@ -70,50 +83,96 @@ def check_health(api_port, timeout = 15):
             seconds_elapsed += 1
     return is_healthy
 
-def launch_app_via_remoteapp(rdp_port, executable, args):
+# adapted from src/renderer/utils/getFreeRDP.ts
+def get_free_rdp_command():
+    for installation in FREE_RDP_INSTALLATIONS:
+        try:
+            get_free_rdp_process = subprocess.run(installation + ["--version"], capture_output = True, text = True)
+            if FREE_RDP_VERSION_STRING in get_free_rdp_process.stdout:
+                print(f"Found FreeRDP installation: {" ".join(installation)}!")
+                return installation
+        except:
+            continue
+    send_notification("Couldn't find your FreeRDP installation!")
+    return None
+
+def get_winboat_config():
+    with open(WINBOAT_INSTALLATION_FOLDER / "winboat.config.json", "r") as json_file:
+        return json.load(json_file)
+
+def get_username_password_from_docker_compose():
+    with open(WINBOAT_INSTALLATION_FOLDER / "docker-compose.yml", "r") as yaml_file:
+        content = yaml_file.read()
+        matches = re.search(r" +USERNAME: (.*)\n +PASSWORD: (.*)", content)
+        return matches.group(1), matches.group(2)
+
+def launch_app_via_remoteapp(rdp_port, executable, args, username, password):
     print(f"Launching {executable}...")
-    command = [
-        RDP_COMMAND,
+
+    command = get_free_rdp_command()
+    command += [
         "/cert:ignore",
         "+clipboard",
         "/sound:sys:pulse",
         "/microphone:sys:pulse",
         "/floatbar",
         "/compression",
-        "/sec:tls",
-        f"/u:{WINDOWS_USERNAME}",
-        f"/p:{WINDOWS_PASSWORD}",
-        "/v:127.0.0.1",
-        f"/port:{rdp_port}",
+        "/sec:tls"
+    ]
+
+    # adapted from src/renderer/lib/winboat.ts
+    config = get_winboat_config()
+
+    # get replacement args for what's already in command
+    replacement_args = list(filter(lambda arg: arg["isReplacement"], config["rdpArgs"] or []))
+    # get new args to add to command
+    new_args = list(map(lambda arg: arg["newArg"], filter(lambda arg: not arg["isReplacement"], config["rdpArgs"] or [])))
+    # for every existing command,
+    for i in range(len(command)):
+        # find if any args in replacement_args match
+        replaced_arg_matches = [r["newArg"] for r in replacement_args if (r["original"] or "noop_command").strip() == command[i]]
+        if len(replaced_arg_matches) != 0: # if they do,
+            command[i] = replaced_arg_matches[0] # replace it
+    command += new_args # add new args
+    command += [
+        f"/u:{username}",
+        f"/p:{password}",
+        f"/v:{IP}",
+        f"/port:{rdp_port}"
     ]
     if executable == "desktop":
         command += [
             "+f",
-            "/scale:100"
+            f"/scale:{config["scale"] or 100}"
         ]
+        if config["smartcardEnabled"]:
+            command += ["/smartcard"]
     else:
         command += [
             "-wallpaper",
-            "/scale-desktop:100",
-            "/wm-class:winboat-yay",
+            f"/scale-desktop:{config["scaleDesktop"] or 100}",
+            f"/wm-class:winboat-auto-winboat-{get_clean_name(executable)}",
             f"/app:program:{executable},cmd:{args}"
         ]
-        if MULTI_MONITOR_MODE_ARG:
-            command.append(MULTI_MONITOR_MODE_ARG)
+        if config["multiMonitor"] == 1:
+            command.append("/multimon")
+        elif config["multiMonitor"] == 2:
+            command.append("+span")
+
     rdp_process = subprocess.Popen(command, stdout = subprocess.DEVNULL, stderr = subprocess.DEVNULL)
     print(f"Launched {executable}!")
 
-def wait_to_shut_down_container(ssh_port):
+def wait_to_shut_down_container(ssh_port, username, password):
     print("Waiting for RDP and / or WinBoat to close...")
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(IP, ssh_port, WINDOWS_USERNAME, WINDOWS_PASSWORD)
+    ssh.connect(IP, ssh_port, username, password)
 
     while True:
         sleep(5)
 
         xwininfo_process = subprocess.run(["xwininfo", "-root", "-children"], capture_output = True, text = True)
-        if xwininfo_process.stdout.find("WinBoat") != -1:
+        if "WinBoat" in xwininfo_process.stdout:
             continue
 
         _, stdout, _ = ssh.exec_command("tasklist /v")
@@ -121,14 +180,14 @@ def wait_to_shut_down_container(ssh_port):
 
         is_rdp_still_open = False
         for line in lines:
-            if line.find("RDP-Tcp") != -1:
+            if "RDP-Tcp" in line:
                 is_rdp_still_open = True
                 break
         if not is_rdp_still_open:
             return
 
 def main(executable, args):
-    send_notification(f"Starting {executable}...")
+    send_notification(f"Starting {get_executable_file_name(executable)}...")
     print("Starting container...")
     start_container_process = start_container()
     if start_container_process.returncode != 0:
@@ -147,10 +206,11 @@ def main(executable, args):
         return
     print("Container is healthy!")
 
-    launch_app_via_remoteapp(port_mapping["rdp"], executable, args)
+    username, password = get_username_password_from_docker_compose()
+    launch_app_via_remoteapp(port_mapping["rdp"], executable, args, username, password)
 
     if AUTO_SHUTDOWN_CONTAINER:
-        wait_to_shut_down_container(port_mapping["ssh"])
+        wait_to_shut_down_container(port_mapping["ssh"], username, password)
         print("Shutting down container...")
         stop_container()
         send_notification("Container shutdown successfully!")
