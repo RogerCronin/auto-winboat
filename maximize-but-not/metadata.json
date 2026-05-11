@@ -1,0 +1,20 @@
+{
+    "KPlugin": {
+        "Name": "Maximize but Not",
+        "Description": "Maximizes but doesn't",
+        "Icon": "preferences-system-windows",
+        "Authors": [
+            {
+                "Email": "roger.m.cronin@gmail.com",
+                "Name": "Roger Cronin"
+            }
+        ],
+        "Id": "maximize-but-not",
+        "Version": "1.0",
+        "License": "MIT",
+        "EnabledByDefault": true
+    },
+    "X-Plasma-API": "javascript",
+    "X-Plasma-MainScript": "code/main.js",
+    "KPackageStructure": "KWin/Script"
+}

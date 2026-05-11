@@ -6,7 +6,7 @@ A collection of utilities to make using Windows applications with [WinBoat](http
 
 This script helps launch Windows applications easily, automatically starting and stopping the Windows VM on program launch and close. This only works for Docker installations btw; sorry!
 
-### Setup
+### Installation
 
 Copy `auto-winboat` into wherever you store your user scripts (I put mine in `~roger/.local/bin/auto-winboat`) and run `chmod +x auto-winboat` to make it executable.
 
@@ -56,4 +56,14 @@ The `comma_separated_file_arg_positions` means something like `5,6` would automa
 
 I use KDE Plasma, which has a file associations page in system settings for me to add the `application/paintdotnet` MIME Type and associate it with `*.pdn` files. Your desktop might have a similar app, or you might have to Google it. With this MIME Type, you can use that Paint.NET desktop file to open PDN files directly. You can right click and edit stuff like PNGs or JPEGs, done via the MimeType line in the desktop file.
 
-All of this is in Public Domain btw
+## Maximize but Not
+
+This KDE Plasma KWin Script that mimics window maximization when using RDP's span option for multi-monitor setups. It provides a shortcut (Meta+Z by default) under Window Management "Maximize but Not", setting the active window to take up the entirety of the current screen. If you'd maximize an RDP RemoteApp session's window normally under span, it would mess everything up; using this avoids that.
+
+### Installation
+
+Zip the maximize-but-not folder and rename to "maximize-but-not.kwinscript". In System Settings, go to Window Management, then KWin Scripts. Select "Install from File", select your kwinscript file, and make sure the box is checked to enable it.
+
+### Usage
+
+You can press Meta+Z to make the currently selected window take up the entirety of its screen. This is changeable under Keyboard -> Shortcuts -> Window Management -> Maximize but Not in System Settings.
